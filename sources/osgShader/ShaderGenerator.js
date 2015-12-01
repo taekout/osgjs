@@ -2,6 +2,7 @@
 var Notify = require( 'osg/Notify' );
 var Program = require( 'osg/Program' );
 var Shader = require( 'osg/Shader' );
+var Utils = require( 'osg/Utils' );
 var Map = require( 'osg/Map' );
 var Compiler = require( 'osgShader/Compiler' );
 var ShaderProcessor = require( 'osgShader/ShaderProcessor' );
@@ -209,6 +210,40 @@ ShaderGenerator.prototype = {
 
             var cache = this._cache.get( hash );
             if ( cache !== undefined ) {
+
+                // check attribute list first
+                var lastStateAttributeApplied = cache._lastAttributesApplied;
+                cache._applyAttribute.length = 0;
+                var i, ni;
+                for ( i = 0, ni = attributes.length; i < ni; i++ ) {
+                    var attribute = attributes[ i ];
+                    if ( !attribute.getOrCreateUniforms ) continue;
+                    if ( lastStateAttributeApplied[ i ] !== attribute ) {
+                        cache._applyAttribute.push( attribute );
+                        // update the last attribute list
+                        lastStateAttributeApplied[ i ] = attribute;
+                    }
+                }
+
+                var lastStateTextureAttributeApplied = cache._lastTextureAttributesApplied;
+                cache._applyTextureAttribute.length = 0;
+                var index = 0;
+                for ( i = 0, ni = textureAttributes.length; i < ni; i++ ) {
+                    var textureAttributesOnUnit = textureAttributes[ i ];
+
+                    for ( var j = 0, nj = textureAttributesOnUnit.length; j < nj; j++ ) {
+                        var textureAttribute = textureAttributesOnUnit[ j ];
+                        if ( !textureAttribute.getOrCreateUniforms ) continue;
+
+                        if ( lastStateTextureAttributeApplied[ index ].attribute !== textureAttribute ) {
+                            cache._applyTextureAttribute.push( lastStateTextureAttributeApplied[ index ] );
+                            lastStateTextureAttributeApplied[ index ].attribute = textureAttribute;
+                            lastStateTextureAttributeApplied[ index ].unit = i;
+                        }
+                        index++;
+                    }
+                }
+
                 return cache;
             }
 
@@ -237,6 +272,35 @@ ShaderGenerator.prototype = {
 
             program.hash = hash;
             program.activeUniforms = this.getActiveUniforms( state, attributes, textureAttributes );
+            program._applyAttribute = [];
+            program._lastAttributesApplied = [];
+
+            for ( i = 0, ni = attributes.length; i < ni; i++ ) {
+                var attribute = attributes[ i ];
+                if ( !attribute.getOrCreateUniforms ) continue;
+                program._applyAttribute.push( attribute );
+            }
+            Utils.copyArray( program._applyAttribute, program._lastAttributesApplied );
+
+            program._applyTextureAttribute = [];
+            program._lastTextureAttributesApplied = [];
+
+            for ( i = 0, ni = textureAttributes.length; i < ni; i++ ) {
+                var textureAttributesOnUnit = textureAttributes[ i ];
+
+                for ( var j = 0, nj = textureAttributesOnUnit.length; j < nj; j++ ) {
+                    var textureAttribute = textureAttributesOnUnit[ j ];
+                    if ( !textureAttribute.getOrCreateUniforms ) continue;
+                    var entry = {
+                        unit: i,
+                        attribute: textureAttribute
+                    };
+                    program._lastTextureAttributesApplied.push( entry );
+                    program._applyTextureAttribute.push( entry );
+                }
+            }
+
+
             program.generated = true;
 
             this._cache.set( hash, program );

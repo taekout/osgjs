@@ -27,6 +27,8 @@ var Program = function ( vShader, fShader ) {
 
     this._uniformsCache = undefined;
     this._attributesCache = undefined;
+    this._toApply = [];
+    this._lastStateAttributeApplied = [];
 
     if ( vShader )
         this.setVertexShader( vShader );

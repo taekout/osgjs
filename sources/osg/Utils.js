@@ -19,6 +19,12 @@ Utils.isArray = function ( obj ) {
     return Array.isArray( obj );
 };
 
+// copy fast array http://jsperf.com/new-array-vs-splice-vs-slice/113
+Utils.copyArray = function ( a, b ) {
+    var i = a.length;
+    while ( i-- ) b[ i ] = a[ i ];
+};
+
 Utils.extend = function () {
     // Save a reference to some core methods
     var toString = window.Object.prototype.toString;

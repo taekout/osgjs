@@ -7,6 +7,7 @@ var Timer = require( 'osg/Timer' );
 var UpdateVisitor = require( 'osg/UpdateVisitor' );
 var MACROUTILS = require( 'osg/Utils' );
 var Texture = require( 'osg/Texture' );
+var WebGLCaps = require( 'osg/WebGLCaps' );
 var OrbitManipulator = require( 'osgGA/OrbitManipulator' );
 var CanvasStats = require( 'osgViewer/CanvasStats' );
 var EventProxy = require( 'osgViewer/eventProxy/EventProxy' );
@@ -189,6 +190,11 @@ Viewer.prototype = MACROUTILS.objectInherit( View.prototype, {
 
         this.initWebGLCaps( gl );
         this.setGraphicContext( gl );
+
+        // init texture null by default, helps for default texture and shadow
+        var state = this.getCamera().getRenderer().getState();
+        for ( var i = 0; i < WebGLCaps.instance().getWebGLParameter( 'MAX_COMBINED_TEXTURE_IMAGE_UNITS' ); i++ )
+            state.setGlobalDefaultTextureAttribute( i, Texture.textureNull );
 
         return gl;
     },

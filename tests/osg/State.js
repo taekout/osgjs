@@ -103,4 +103,76 @@ module.exports = function () {
         } )();
     } );
 
+
+    // check that StateAttribute are not applied more than one time to a program
+    QUnit.test( 'State applyGeneratedProgramUniforms', function () {
+
+        ( function () {
+            var state = new State( new ShaderGeneratorProxy() );
+            var fakeRenderer = mockup.createFakeRenderer();
+            var id = 0;
+            fakeRenderer.createProgram = function () {
+                return id++;
+            };
+            fakeRenderer.getProgramParameter = function () {
+                return true;
+            };
+
+            var counterUniformCall = 0;
+            var uniform = {
+                apply: function () {
+                    counterUniformCall++;
+                }
+            };
+
+            // simulate different programe using the same uniform
+            var program1 = {
+                activeUniforms: {
+                    getKeys: function () {
+                        return [
+                            'ambient',
+                            'Texture0'
+                        ];
+                    },
+                    ambient: uniform,
+                    Texture0: uniform
+                },
+                _uniformsCache: {
+                    ambient: 0,
+                    Texture0: 1
+                },
+                foreignUniforms: [],
+                stateAttributes: {}
+            };
+
+            var material = new Material();
+            var texture = new Texture();
+
+            program1.stateAttributes.set( material, 0 );
+            program1.stateAttributes.set( texture, 1 );
+
+            state.setGraphicContext( fakeRenderer );
+
+            var stateSet0 = new StateSet();
+            var stateSet1 = new StateSet();
+
+
+            stateSet0.setAttributeAndModes( material );
+            stateSet0.setTextureAttributeAndModes( 0, texture );
+
+            stateSet1.setAttributeAndModes( material );
+            stateSet1.setTextureAttributeAndModes( 0, texture );
+
+            state.applyStateSet( stateSet0 );
+
+
+            state._applyGeneratedProgramUniforms( program1 );
+            equal( counterUniformCall, 2, 'check uniform apply the first time' );
+
+            state._applyGeneratedProgramUniforms( program1 );
+            equal( counterUniformCall, 2, 'check uniform apply the second time' );
+
+        } )();
+    } );
+
 };

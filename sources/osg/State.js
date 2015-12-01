@@ -8,6 +8,7 @@ var StateAttribute = require( 'osg/StateAttribute' );
 var Stack = require( 'osg/Stack' );
 var Uniform = require( 'osg/Uniform' );
 var MACROUTILS = require( 'osg/Utils' );
+var Texture = require( 'osg/Texture' );
 
 
 var State = function ( shaderGeneratorProxy ) {
@@ -49,6 +50,7 @@ var State = function ( shaderGeneratorProxy ) {
     this.vertexAttribMap._disable = [];
     this.vertexAttribMap._keys = [];
 
+    this._generatedProgramUsed = [];
     this._frameStamp = undefined;
 
     // we dont use Map because in this use case with a few entries
@@ -187,6 +189,16 @@ State.prototype = MACROUTILS.objectLibraryClass( MACROUTILS.objectInherit( Objec
     // invalidate those informations
     resetCacheFrame: function () {
         this._modelViewMatrix = this._projectionMatrix = undefined;
+
+        var a, aa;
+        for ( var i = 0, l = this._generatedProgramUsed.length; i < l; i++ ) {
+            for ( a = 0, aa = this._generatedProgramUsed[ i ]._lastTextureAttributesApplied.length; a < aa; a++ )
+                this._generatedProgramUsed[ i ]._lastTextureAttributesApplied[ a ].attribute = undefined;
+            for ( a = 0, aa = this._generatedProgramUsed[ i ]._lastAttributesApplied.length; a < aa; a++ )
+                this._generatedProgramUsed[ i ]._lastAttributesApplied[ a ] = undefined;
+        }
+
+        this._generatedProgramUsed.length = 0;
     },
 
 
@@ -384,13 +396,6 @@ State.prototype = MACROUTILS.objectLibraryClass( MACROUTILS.objectInherit( Objec
                 // there is a texture we bind it.
                 attribute.apply( this, unit );
 
-                // TODO: optimization:
-                // if attribute.isTextureNull()
-                // only bind if last Framebuffer Texture Binded
-                // are the same as those we try to write from
-                // need rewrite of the fbo attachments system to keep history
-                // and state to keep last fbo textures binded.
-                // (applyTextureAttributeStack concerned too)
             }
             attributeStack.lastApplied = attribute;
             attributeStack.asChanged = true;
@@ -426,6 +431,7 @@ State.prototype = MACROUTILS.objectLibraryClass( MACROUTILS.objectInherit( Objec
             // will cache uniform and apply them with the program
 
             this._applyGeneratedProgramUniforms( this.attributeMap.Program.lastApplied );
+            this._generatedProgramUsed.push( this.attributeMap.Program.lastApplied );
 
         } else {
 
@@ -1019,19 +1025,55 @@ State.prototype = MACROUTILS.objectLibraryClass( MACROUTILS.objectInherit( Objec
 
         var programUniformMap = program._uniformsCache;
         var activeUniformMap = program.activeUniforms;
-
+        // var activeStateAttributes = program._toApply;
 
         // apply active uniforms
         // caching uniforms from attribtues make it impossible to overwrite uniform with a custom uniform instance not used in the attributes
         var i, l, name, location;
-        var activeUniformKeys = activeUniformMap.getKeys();
 
-        for ( i = 0, l = activeUniformKeys.length; i < l; i++ ) {
+        if ( false ) {
+            var activeUniformKeys = activeUniformMap.getKeys();
 
-            name = activeUniformKeys[ i ];
-            location = programUniformMap[ name ];
-            activeUniformMap[ name ].apply( this._graphicContext, location );
+            for ( i = 0, l = activeUniformKeys.length; i < l; i++ ) {
 
+                name = activeUniformKeys[ i ];
+                location = programUniformMap[ name ];
+                activeUniformMap[ name ].apply( this._graphicContext, location );
+
+            }
+        } else  {
+
+            var attribute;
+            var uniformMap;
+            var keys;
+            var u, nu;
+            for ( i = 0, l = program._applyAttribute.length; i < l; i++ ) {
+                attribute = program._applyAttribute [ i ];
+                uniformMap = attribute.getOrCreateUniforms();
+                keys = uniformMap.getKeys();
+                for ( u = 0, nu = keys.length; u < nu; u++ ) {
+                    name = uniformMap[ keys[ u ] ].getName();
+                    location = programUniformMap[ name ];
+                    if ( !location ) continue;
+                    activeUniformMap[ name ].apply( this._graphicContext, location );
+                }
+            }
+            program._applyAttribute.length = 0;
+
+            for ( i = 0, l = program._applyTextureAttribute.length; i < l; i++ ) {
+                var entry = program._applyTextureAttribute[ i ];
+                attribute = entry.attribute;
+                var unit = entry.unit;
+                uniformMap = attribute.getOrCreateUniforms( unit );
+                keys = uniformMap.getKeys();
+                for ( u = 0, nu = keys.length; u < nu; u++ ) {
+                    name = uniformMap[ keys[ u ] ].getName();
+                    location = programUniformMap[ name ];
+                    if ( !location ) continue;
+                    activeUniformMap[ name ].apply( this._graphicContext, location );
+                }
+            }
+            program._applyTextureAttribute.length = 0;
         }
 
         var uniformMapStack = this.uniforms;

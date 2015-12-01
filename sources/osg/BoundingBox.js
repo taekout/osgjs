@@ -85,16 +85,20 @@ BoundingBox.prototype = MACROUTILS.objectLibraryClass( {
         if ( bbmax[ 2 ] > max[ 2 ] ) max[ 2 ] = bbmax[ 2 ];
     },
 
+    // the warning seems to break optimization from v8
     center: function ( result ) {
         var min = this._min;
         var max = this._max;
-        if ( result === undefined ) {
-            // TODO: deprecated warning?
+        var data = result;
+        if ( !data ) {
+            data = Vec3.create();
+            /* develblock:start */
             Notify.warn( 'deprecated use center( result ) instead !' );
-            result = Vec3.create();
+            /* develblock:end */
         }
-        Vec3.set( ( min[ 0 ] + max[ 0 ] ) * 0.5, ( min[ 1 ] + max[ 1 ] ) * 0.5, ( min[ 2 ] + max[ 2 ] ) * 0.5, result );
-        return result;
+
+        Vec3.set( ( min[ 0 ] + max[ 0 ] ) * 0.5, ( min[ 1 ] + max[ 1 ] ) * 0.5, ( min[ 2 ] + max[ 2 ] ) * 0.5, data );
+        return data;
     },
 
     radius: function () {

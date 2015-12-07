@@ -342,6 +342,17 @@ Viewer.prototype = MACROUTILS.objectInherit( View.prototype, {
                 return 'DrawTime: ' + a.toFixed( 2 ) + ' ms';
             } );
 
+        canvasStats.addLayer( '#ff0d00', 100,
+            function ( /*t*/) {
+                var fn = this.getFrameStamp().getFrameNumber() - 1;
+                var value = this.getViewerStats().getAttribute( fn, 'Push/Pop StateSet' );
+                return value;
+            }.bind( this ),
+            function ( a ) {
+                return 'Push/Pop StateSet: ' + a;
+            } );
+
+
         canvasStats.addLayer( '#f0f000', 256,
             function ( /*t*/) {
                 var fn = this.getFrameStamp().getFrameNumber() - 1;
@@ -377,6 +388,8 @@ Viewer.prototype = MACROUTILS.objectInherit( View.prototype, {
                     return 'Memory : ' + v.toFixed( 2 ) + ' Mb';
                 } );
         }
+
+
         this._canvasStats = canvasStats;
 
     },
@@ -449,6 +462,7 @@ Viewer.prototype = MACROUTILS.objectInherit( View.prototype, {
 
     beginFrame: function () {
         this._startFrameTick = Timer.instance().tick();
+
     },
     endFrame: function () {
 
@@ -461,6 +475,7 @@ Viewer.prototype = MACROUTILS.objectInherit( View.prototype, {
             this.getViewerStats().setAttribute( frameNumber, 'Heap size', mem );
         }
 
+        this.getViewerStats().setAttribute( frameNumber, 'Push/Pop StateSet', this.getState()._statsPushStateSetCount );
         this.getViewerStats().setAttribute( frameNumber, 'Frame duration', Timer.instance().deltaS( this._startFrameTick, Timer.instance().tick() ) );
 
         if ( this._canvasStats ) { // update ui stats

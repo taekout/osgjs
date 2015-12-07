@@ -95,7 +95,7 @@ module.exports = function () {
 
             equal( state.getStateSetStackSize(), 1, 'check stateSet stack length' );
             QUnit.notEqual( state.getLastProgramApplied(), undefined, 'check last program applied' );
-            equal( state.attributeMap.Program.values().length, 0, 'check program stack length' );
+            equal( state.attributeMap.Program.length, 0, 'check program stack length' );
 
             // check that texture 0 is applied only once
             equal( textureBindCall.get( 1 ), 1, 'check that texture 0 is applied only once' );

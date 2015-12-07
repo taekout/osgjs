@@ -115,9 +115,7 @@ Utils.extend = function () {
 };
 
 Utils.objectInherit = function ( base /*, extras*/ ) {
-    function F() {}
-    F.prototype = base;
-    var obj = new F();
+    var obj = Object.create( base );
 
     // let augment object with multiple arguement
     for ( var i = 1; i < arguments.length; i++ ) {

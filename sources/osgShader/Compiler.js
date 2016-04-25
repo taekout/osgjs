@@ -1,4 +1,5 @@
 'use strict';
+var Light = require( 'osg/Light' );
 var Notify = require( 'osg/Notify' );
 var MACROUTILS = require( 'osg/Utils' );
 var Uniform = require( 'osg/Uniform' );
@@ -10,6 +11,7 @@ var Compiler = function ( attributes, textureAttributes, shaderProcessor ) {
 
     this._activeNodeList = {};
     this._compiledNodeList = {};
+    this._traversedNodeList = {};
 
     this._variables = {};
     this._varyings = {};
@@ -204,6 +206,16 @@ Compiler.prototype = {
         } else {
             Notify.warn( 'Node not requested by using Compiler getNode and/or not registered in nodeFactory ' + n.toString() );
         }
+    },
+
+    // make sure we traverse once per evaluation of graph
+    checkOrMarkNodeAsTraversed: function ( n ) {
+        var cacheID = n.getID();
+        if ( this._traversedNodeList[ cacheID ] ) {
+            return true;
+        }
+        this._traversedNodeList[ cacheID ] = n;
+        return false;
     },
 
     getVariable: function ( nameID ) {
@@ -771,8 +783,19 @@ Compiler.prototype = {
             float: shadowedOutput
         } ).setShadowAttribute( shadow );
 
+        // allow overwrite by inheriting compiler
+        // where shadow inputs ( NDotL notably)
+        // can be used for non standard shadows
+        return this.connectShadowLightNode( light, lightedOutput, shadowedOutput, shadowInputs );
+
+    },
+
+    connectShadowLightNode: function ( light, lightedOutput, shadowedOutput ) {
+
         var lightAndShadowTempOutput = this.createVariable( 'vec3', 'lightAndShadowTempOutput' );
+
         this.getNode( 'Mult' ).inputs( lightedOutput, shadowedOutput ).outputs( lightAndShadowTempOutput );
+
         return lightAndShadowTempOutput;
 
     },
@@ -809,16 +832,28 @@ Compiler.prototype = {
         inputsShadow = MACROUTILS.objectMix( inputsShadow, shadowVarying );
         return inputsShadow;
     },
-    // Shared var between lights and shadows
-    createCommonLightingVars: function ( materials, enumLights, numLights ) {
 
-        if ( numLights === 0 )
-            return {};
+    // Shared var between all lights and shadows
+    // useful for compilers overriding default compiler
+    /*jshint -W098*/
+    createCommonLightingVars: function ( materials, enumLights ) {
+        return {};
+    },
+    /*jshint +W098*/
 
-        var lighted = this.createVariable( 'bool', 'lighted' );
-        var lightPos = this.createVariable( 'vec3', 'lightEyePos' );
-        var lightDir = this.createVariable( 'vec3', 'lightEyeDir' );
-        var lightNDL = this.createVariable( 'float', 'lightNDL' );
+    // Shared var between each light and its respective shadow
+    createLightAndShadowVars: function ( materials, enumLights, lightNum ) {
+
+        var type = this._lights[ lightNum ].getLightType();
+
+        var lighted = this.createVariable( 'bool', 'lighted' + lightNum );
+        var lightPos;
+        if ( type === Light.SPOT || type === Light.POINT ) {
+            lightPos = this.createVariable( 'vec3', 'lightEyePos' + lightNum );
+        }
+        var lightDir = this.createVariable( 'vec3', 'lightEyeDir' + lightNum );
+        var lightNDL = this.createVariable( 'float', 'lightNDL' + lightNum );
+
 
         return {
             lighted: lighted,
@@ -841,9 +876,10 @@ Compiler.prototype = {
             HEMI: 'HemiLight'
         };
 
-        var lightOutShadowIn = this.createCommonLightingVars( materials, enumToNodeName, this._lights.length );
 
         var materialUniforms = this.getOrCreateStateAttributeUniforms( this._material, 'material' );
+        var sharedLightingVars = this.createCommonLightingVars( materials, enumToNodeName );
+
         for ( var i = 0; i < this._lights.length; i++ ) {
 
             var light = this._lights[ i ];
@@ -854,10 +890,12 @@ Compiler.prototype = {
             // create uniforms from stateAttribute and mix them with materials
             // to pass the result as input for light node
             var lightUniforms = this.getOrCreateStateAttributeUniforms( this._lights[ i ], 'light' );
+            var lightOutShadowIn = this.createLightAndShadowVars( materials, enumToNodeName, i );
 
             var inputs = MACROUTILS.objectMix( {}, lightUniforms );
             inputs = MACROUTILS.objectMix( inputs, materialUniforms );
             inputs = MACROUTILS.objectMix( inputs, materials );
+            inputs = MACROUTILS.objectMix( inputs, sharedLightingVars );
             inputs = MACROUTILS.objectMix( inputs, lightOutShadowIn );
 
             if ( !inputs.normal )
@@ -866,7 +904,11 @@ Compiler.prototype = {
                 inputs.eyeVector = this.getOrCreateNormalizedPosition();
 
             this.getNode( nodeName ).inputs( inputs ).outputs( {
-                color: lightedOutput
+                color: lightedOutput,
+                lightEyePos: inputs.lightEyePos, // spot and point only
+                lightEyeDir: inputs.lightEyeDir,
+                ndl: inputs.lightNDL,
+                lighted: inputs.lighted
             } );
 
             var shadowedOutput = this.createShadowingLight( light, inputs, lightedOutput );
@@ -915,6 +957,8 @@ Compiler.prototype = {
     // TODO: add a visitor to debug the graph
     traverse: function ( functor, node ) {
 
+        if ( this.checkOrMarkNodeAsTraversed( node ) ) return;
+
         var inputs = node.getInputs();
         if ( !Array.isArray( inputs ) ) {
             var keys = window.Object.keys( inputs );
@@ -936,10 +980,23 @@ Compiler.prototype = {
         }
         functor.call( functor, node );
 
-        // keep trace we visited.
+        // keep trace we visited
         this.markNodeAsVisited( node );
+
     },
 
+    // clean necessary bits before traversing
+    // called in each evaluate func belows
+    preTraverse: function ( visitor ) {
+
+        // store traversed list to prevent double traverse
+        this._traversedNodeList = {};
+
+        visitor._map = {};
+        visitor._text = [];
+
+        return visitor;
+    },
     // Gather a particular output field
     // for now one of
     // ['define', 'extensions']
@@ -972,8 +1029,7 @@ Compiler.prototype = {
 
         };
 
-        func._map = {};
-        func._text = [];
+        this.preTraverse( func );
 
         for ( var j = 0, jl = nodes.length; j < jl; j++ ) {
             this.traverse( func, nodes[ j ] );
@@ -1011,8 +1067,7 @@ Compiler.prototype = {
 
         };
 
-        func._map = {};
-        func._text = [];
+        this.preTraverse( func );
 
         for ( var j = 0, jl = nodes.length; j < jl; j++ ) {
             this.traverse( func, nodes[ j ] );
@@ -1045,8 +1100,9 @@ Compiler.prototype = {
             }
         };
 
-        func._map = {};
-        func._text = [];
+
+        this.preTraverse( func );
+
         for ( var j = 0, jl = nodes.length; j < jl; j++ ) {
             this.traverse( func, nodes[ j ] );
         }
@@ -1087,10 +1143,11 @@ Compiler.prototype = {
 
     evaluate: function ( nodes ) {
 
+
         var func = function ( node ) {
 
             var id = node.getID();
-            if ( this._mapTraverse[ id ] !== undefined ) {
+            if ( this._map[ id ] !== undefined ) {
                 return;
             }
 
@@ -1108,11 +1165,11 @@ Compiler.prototype = {
 
                 this._text.push( c );
             }
-            this._mapTraverse[ id ] = true;
+
+            this._map[ id ] = true;
         };
 
-        func._text = [];
-        func._mapTraverse = [];
+        this.preTraverse( func );
 
         for ( var j = 0, jl = nodes.length; j < jl; j++ ) {
             this.traverse( func, nodes[ j ] );

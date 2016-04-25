@@ -15,8 +15,8 @@ var OrbitManipulatorWebVRController = require( 'osgGA/OrbitManipulatorWebVRContr
  *  OrbitManipulator
  *  @class
  */
-var OrbitManipulator = function ( flags ) {
-    Manipulator.call( this, flags );
+var OrbitManipulator = function ( boundStrategy ) {
+    Manipulator.call( this, boundStrategy );
     this._homePosition = Vec3.create();
     this._frustum = {};
     this.init();
@@ -175,15 +175,6 @@ OrbitManipulator.prototype = MACROUTILS.objectInherit( Manipulator.prototype, {
             Vec3.sub( eye, center, f );
             Vec3.normalize( f, f );
 
-            var p = Vec3.dot( f, this._upz );
-            if ( Math.abs( p ) > DOT_LIMIT ) {
-                // we force z to DOT_LIMIT and we normalize the vec3 vector by only editing the x and y component
-                var a = Math.sqrt( ( 1.0 - DOT_LIMIT * DOT_LIMIT ) / ( f[ 0 ] * f[ 0 ] + f[ 1 ] * f[ 1 ] ) );
-                f[ 0 ] *= a;
-                f[ 1 ] *= a;
-                f[ 2 ] = DOT_LIMIT * Math.sign( p );
-            }
-
             Vec3.cross( f, this._upz, s );
             Vec3.normalize( s, s );
 
@@ -214,11 +205,15 @@ OrbitManipulator.prototype = MACROUTILS.objectInherit( Manipulator.prototype, {
             this._distance = Vec3.distance( eye, center );
         };
     } )(),
-    computeHomePosition: function ( useBoundingBox ) {
-        var bs = this.getHomeBound( useBoundingBox );
-        if ( !bs ) return;
+
+    computeHomePosition: function ( boundStrategy ) {
+
+        var bs = this.getHomeBound( boundStrategy );
+        if ( !bs || !bs.valid() ) return;
+
         this.setDistance( this.getHomeDistance( bs ) );
         this.setTarget( bs.center() );
+
     },
 
     getHomePosition: function () {
@@ -276,7 +271,7 @@ OrbitManipulator.prototype = MACROUTILS.objectInherit( Manipulator.prototype, {
             // modulate panning speed with verticalFov value
             // if it's an orthographic we don't change the panning speed
             // TODO : manipulators in osgjs don't support well true orthographic camera anyway because they
-            // manage the view matrix (and you need to edit the projection matrix to 'zoom' for true ortho camera) 
+            // manage the view matrix (and you need to edit the projection matrix to 'zoom' for true ortho camera)
             var vFov = proj[ 15 ] === 1 ? 1.0 : 2.00 / proj[ 5 ];
             var speed = this.getSpeedFactor() * vFov;
             dy *= speed;

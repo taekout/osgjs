@@ -112,6 +112,11 @@ var Viewer = function ( canvas, userOptions, error ) {
     this._updateVisitor = new UpdateVisitor();
 
     this.setUpView( gl.canvas, options );
+
+    this._hmd = null;
+    this._useVR = false; // if we use custom requestAnimationFrame
+
+    this._contextLost = false;
 };
 
 
@@ -190,12 +195,31 @@ Viewer.prototype = MACROUTILS.objectInherit( View.prototype, {
         return gl;
     },
 
+    setContextLostCallback: function ( cb ) {
+        this._contextLostCallback = cb;
+        // just in case callback registration
+        // happens after the context lost 
+        if ( this._contextLost ) {
+            cb();
+        }
+    },
+
     contextLost: function () {
         Notify.log( 'webgl context lost' );
-        window.cancelRequestAnimFrame( this._requestID );
+        if ( this._contextLostCallback ) {
+            this._contextLostCallback();
+        }
+        this._contextLost = true;
+        window.cancelAnimationFrame( this._requestID );
     },
+
     contextRestored: function () {
         Notify.log( 'webgl context restored, but not supported - reload the page' );
+        // Supporting it implies to have
+        // reloaded all your resources:
+        // textures, vertex/index buffers, shaders, frame buffers
+        // so only set it back if you happen to have restored the context
+        // this._contextLost = false;
     },
 
     init: function () {
@@ -338,6 +362,10 @@ Viewer.prototype = MACROUTILS.objectInherit( View.prototype, {
 
     frame: function () {
 
+        // _contextLost check for code calling viewer::frame directly
+        // (likely force preload gl resource or direct render control )
+        if ( this._contextLost ) return;
+
         this.beginFrame();
 
         this.advance();
@@ -368,6 +396,7 @@ Viewer.prototype = MACROUTILS.objectInherit( View.prototype, {
     setDone: function ( bool ) {
         this._done = bool;
     },
+
     done: function () {
         return this._done;
     },
@@ -376,11 +405,46 @@ Viewer.prototype = MACROUTILS.objectInherit( View.prototype, {
         var self = this;
         var render = function () {
             if ( !self.done() ) {
-                self._requestID = window.requestAnimationFrame( render, self.getGraphicContext().canvas );
+
+                if ( self._useVR )
+                    self._requestID = self._hmd.requestAnimationFrame( render );
+                else
+                    self._requestID = window.requestAnimationFrame( render, self.getGraphicContext().canvas );
+
                 self.frame();
+
+                if ( self._useVR )
+                    self._hmd.submitFrame( self._eventProxy.WebVR._lastPose );
             }
         };
         render();
+    },
+
+    setVRDisplay: function ( hmd ) {
+        this._hmd = hmd;
+    },
+
+    setPresentVR: function ( bool ) {
+        if ( !this._hmd ) {
+            Notify.warn( 'no hmd device provided to the viewer!' );
+            return;
+        }
+
+        // reset position/orientation of hmd device
+        this._hmd.resetPose();
+
+        if ( !this._hmd.capabilities.canPresent )
+            return;
+
+        this._useVR = bool;
+
+        if ( bool ) {
+            this._hmd.requestPresent( [ {
+                source: this.getGraphicContext().canvas
+            } ] );
+        } else {
+            this._hmd.exitPresent();
+        }
     },
 
     setupManipulator: function ( manipulator /*, dontBindDefaultEvent */ ) {
@@ -493,11 +557,18 @@ Viewer.prototype = MACROUTILS.objectInherit( View.prototype, {
                 device.update( frameStamp );
         } );
     },
+
     setManipulator: function ( manipulator ) {
+
         if ( this._manipulator )
             this.removeEventProxy();
+
+        if ( !manipulator.getCamera() )
+            manipulator.setCamera( this.getCamera() );
+
         View.prototype.setManipulator.call( this, manipulator );
     },
+
     removeEventProxy: function () {
         var list = this._eventProxy;
         var keys = window.Object.keys( list );
@@ -507,6 +578,7 @@ Viewer.prototype = MACROUTILS.objectInherit( View.prototype, {
                 device.remove();
         } );
     },
+
     getEventProxy: function () {
         return this._eventProxy;
     }

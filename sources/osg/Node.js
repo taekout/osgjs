@@ -39,6 +39,9 @@ var Node = function () {
     this._tmpBox = new BoundingBox();
 };
 
+Node._reservedMatrixStack = new MatrixMemoryPool();
+var nodeGetMat = Node._reservedMatrixStack.get.bind( Node._reservedMatrixStack );
+
 /** @lends Node.prototype */
 Node.prototype = MACROUTILS.objectLibraryClass( MACROUTILS.objectInherit( Object.prototype, {
     /**
@@ -62,7 +65,7 @@ Node.prototype = MACROUTILS.objectLibraryClass( MACROUTILS.objectInherit( Object
         }
     },
     dirtyBound: function () {
-        if ( this._boundingSphereComputed === true ) {
+        if ( this._boundingSphereComputed === true || this._boundingBoxComputed === true ) {
             this._boundingSphereComputed = false;
             this._boundingBoxComputed = false;
 
@@ -243,17 +246,14 @@ Node.prototype = MACROUTILS.objectLibraryClass( MACROUTILS.objectInherit( Object
 
     computeBoundingBox: function ( bbox ) {
 
-        var l = this.children.length;
-        bbox.init();
-        if ( l === 0 ) return bbox;
+        // circular dependency... not sure if the global visitor instance should be instancied here
+        var ComputeBoundsVisitor = require( 'osg/ComputeBoundsVisitor' );
+        var cbv = ComputeBoundsVisitor.instance = ComputeBoundsVisitor.instance || new ComputeBoundsVisitor();
+        cbv.setNodeMaskOverride( ~0x0 ); // traverse everything to be consistent with computeBoundingSphere
+        cbv.reset();
 
-        for ( var i = 0; i < l; i++ ) {
-            var cc = this.children[ i ];
-            if ( cc.referenceFrame === undefined || cc.referenceFrame === TransformEnums.RELATIVE_RF ) {
-                bbox.expandByBoundingBox( cc.getBoundingBox() );
-            }
-        }
-
+        cbv.apply( this );
+        bbox.copy( cbv.getBoundingBox() );
         return bbox;
     },
 
@@ -268,7 +268,6 @@ Node.prototype = MACROUTILS.objectLibraryClass( MACROUTILS.objectInherit( Object
         }
         return this._boundingSphere;
     },
-
 
     computeBoundingSphere: function ( bSphere ) {
 
@@ -333,11 +332,11 @@ Node.prototype = MACROUTILS.objectLibraryClass( MACROUTILS.objectInherit( Object
 
     },
 
-    // same as getWorldMatrix GC: Perf WIN
+    // same as getWorldMatrices GC: Perf WIN
     getWorldMatrix: function ( halt, matrix ) {
 
         // pass allocator on master
-        var matrixList = this.getWorldMatrix( halt, Node._reservedMatrixStack.get );
+        var matrixList = this.getWorldMatrices( halt, nodeGetMat );
 
         if ( matrixList.length === 0 ) {
 
@@ -404,6 +403,5 @@ Node.prototype = MACROUTILS.objectLibraryClass( MACROUTILS.objectInherit( Object
 } ), 'osg', 'Node' );
 MACROUTILS.setTypeID( Node );
 
-Node._reservedMatrixStack = new MatrixMemoryPool();
 
 module.exports = Node;

@@ -5,7 +5,9 @@
     var osg = OSG.osg;
     var osgDB = OSG.osgDB;
     var osgUtil = OSG.osgUtil;
+    var osgGA = OSG.osgGA;
     var ExampleOSGJS = window.ExampleOSGJS;
+    var Hammer = window.Hammer;
     var $ = window.$;
 
     var Example = function () {
@@ -31,10 +33,7 @@
             if ( window.screenfull ) {
                 document.addEventListener( window.screenfull.raw.fullscreenchange, function () {
                     console.log( 'toggle VR mode' );
-
-                    this.toggleVR( {
-                        vrDisplay: this._viewer._eventProxy.WebVR.getHmd()
-                    } );
+                    this.toggleVR();
                 }.bind( this ) );
             }
 
@@ -43,6 +42,8 @@
         toggleVR: function () {
 
             var viewer = this._viewer;
+
+            viewer.setPresentVR( !this._vrState );
 
             // Enable VR
             if ( !this._vrState ) {
@@ -53,14 +54,14 @@
                 // If no vrNode (first time vr is toggled), create one
                 // The modelNode will be attached to it
                 if ( !this._vrNode ) {
-                    if ( navigator.getVRDevices || navigator.mozGetVRDevices ) {
+                    if ( navigator.getVRDisplays ) {
 
-                        viewer._eventProxy.WebVR.setEnable( true );
+                        viewer.getEventProxy().WebVR.setEnable( true );
                         this._vrNode = osgUtil.WebVR.createScene( viewer, this._modelNode, viewer._eventProxy.WebVR.getHmd() );
 
                     } else {
 
-                        viewer._eventProxy.DeviceOrientation.setEnable( true );
+                        viewer.getEventProxy().DeviceOrientation.setEnable( true );
                         this._vrNode = osgUtil.WebVRCustom.createScene( viewer, this._modelNode, {
                             isCardboard: true,
                             vResolution: this._canvas.height,
@@ -93,25 +94,21 @@
 
         requestFullScreenVR: function () {
 
-            if ( !navigator.getVRDevices && !navigator.mozGetVRDevices )
-                osg.warn( 'WebVR Api is not supported by your navigator' );
-
-            if ( window.screenfull ) {
-                window.screenfull.request( this._canvas, {
-                    vrDisplay: this._viewer._eventProxy.WebVR.getHmd()
-                } );
+            if ( !navigator.getVRDisplays && window.screenfull ) {
+                window.screenfull.request( this._canvas );
 
             } else {
-                // no fullscreen use the canvas
+                // no fullscreen use the canvas or webvr
                 this.toggleVR();
             }
+
             $( '#button-enter-fullscreen' ).hide();
             $( '#button-exit-fullscreen' ).show();
         },
 
         exitFullScreenVR: function () {
 
-            if ( window.screenfull ) {
+            if ( !navigator.getVRDisplays && window.screenfull ) {
                 window.screenfull.exit();
             } else {
                 this.toggleVR();
@@ -123,9 +120,7 @@
             if ( window.screenfull && window.screenfull.enabled ) {
                 document.addEventListener( window.screenfull.raw.fullscreenchange, function () {
                     console.log( 'Am I fullscreen? ' + ( window.screenfull.isFullscreen ? 'Yes' : 'No' ) );
-                    this.toggleVR( {
-                        vrDisplay: this._viewer._eventProxy.WebVR.getHmd()
-                    } );
+                    this.toggleVR();
                 } );
             }
         },
@@ -160,7 +155,27 @@
             }.bind( this ) );
 
             this.getRootNode().addChild( root );
+            this._manipulator = new osgGA.FirstPersonManipulator();
+            this._viewer.setManipulator( this._manipulator );
 
+            this.initTouch();
+
+        },
+
+        touch: function ( e ) {
+            // assume the first touch in the 1/4 of the top canvas is a google cardboard touch
+            console.log( 'cardboard touch' );
+            this._manipulator.getForwardInterpolator().setTarget( 1 );
+        },
+
+        unTouch: function ( e ) {
+            console.log( 'cardboard unTouch' );
+            this._manipulator.getForwardInterpolator().setTarget( 0 );
+        },
+
+        initTouch: function () {
+            this._canvas.addEventListener( 'touchstart', this.touch.bind( this ), false );
+            this._canvas.addEventListener( 'touchend', this.unTouch.bind( this ), false );
         }
 
     } );
